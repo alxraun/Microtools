@@ -21,6 +21,7 @@ namespace PressR
         private readonly List<IPressRFeature> _features = [];
         private IPressRFeature _activeFeature;
         private readonly Input _input;
+        private bool _shouldCaptureInput;
 
         public PressRMapComponent(Map map)
             : base(map)
@@ -44,49 +45,9 @@ namespace PressR
                 return;
             }
 
-            foreach (var feature in _features)
+            if (_input.IsPressRModifierKeyPressed && _shouldCaptureInput)
             {
-                feature.ConstantUpdate();
-            }
-
-            if (!_input.IsPressRModifierKeyPressed)
-            {
-                if (_activeFeature != null)
-                {
-                    _activeFeature.Deactivate();
-                    _activeFeature = null;
-                    _input.Reset();
-                }
-                return;
-            }
-
-            _input.OnGUI();
-
-            if (_activeFeature == null)
-            {
-                foreach (var feature in _features)
-                {
-                    if (feature.CanActivate())
-                    {
-                        _activeFeature = feature;
-                        _activeFeature.Activate();
-                        break;
-                    }
-                }
-            }
-
-            if (_activeFeature != null)
-            {
-                if (_activeFeature.CanActivate())
-                {
-                    _activeFeature.Update();
-                }
-                else
-                {
-                    _activeFeature.Deactivate();
-                    _activeFeature = null;
-                    _input.Reset();
-                }
+                _input.OnGUI();
             }
         }
 
@@ -94,33 +55,90 @@ namespace PressR
         {
             bool shouldBeActive = Find.CurrentMap == map && !WorldRendererUtility.WorldSelected;
 
-            if (IsActive && !shouldBeActive)
+            if (!shouldBeActive)
             {
-                if (_activeFeature != null)
+                if (IsActive)
                 {
-                    _activeFeature.Deactivate();
-                    _activeFeature = null;
-                    _input.Reset();
+                    DeactivateActiveFeature();
+                    foreach (var feature in _features)
+                    {
+                        feature.ConstantClear();
+                    }
+                    IsActive = false;
                 }
-                foreach (var feature in _features)
-                {
-                    feature.ConstantClear();
-                }
-                IsActive = false;
+                _shouldCaptureInput = false;
                 return;
             }
 
-            if (!IsActive && shouldBeActive)
+            if (!IsActive)
             {
                 IsActive = true;
             }
-            else if (!shouldBeActive)
+
+            foreach (var feature in _features)
             {
-                return;
+                feature.ConstantUpdate();
             }
+
+            _shouldCaptureInput = false;
+            bool isPressRPressed = _input.IsPressRModifierKeyPressed;
+
+            if (!isPressRPressed)
+            {
+                DeactivateActiveFeature();
+            }
+            else
+            {
+                if (_activeFeature == null)
+                {
+                    var featureToActivate = FindFirstActivatableFeature();
+                    if (featureToActivate != null)
+                    {
+                        _activeFeature = featureToActivate;
+                        _activeFeature.Activate();
+                    }
+                }
+
+                if (_activeFeature != null)
+                {
+                    if (_activeFeature.CanActivate())
+                    {
+                        _activeFeature.Update();
+                        _shouldCaptureInput = true;
+                    }
+                    else
+                    {
+                        DeactivateActiveFeature();
+                    }
+                }
+            }
+
             GraphicsManager?.UpdateTweens();
             GraphicsManager?.UpdateGraphicObjects();
             GraphicsManager?.RenderGraphicObjects();
+        }
+
+        private void DeactivateActiveFeature()
+        {
+            if (_activeFeature == null)
+            {
+                return;
+            }
+            _activeFeature.Deactivate();
+            _activeFeature = null;
+            _input.Reset();
+        }
+
+        private IPressRFeature FindFirstActivatableFeature()
+        {
+            foreach (var feature in _features)
+            {
+                if (feature.CanActivate())
+                {
+                    return feature;
+                }
+            }
+            return null;
         }
 
         public override void ExposeData()
